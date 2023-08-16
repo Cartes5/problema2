@@ -1,4 +1,5 @@
 <?php
+
 /**
  * 2007-2021 PrestaShop
  *
@@ -22,6 +23,11 @@
  * @copyright Copyright (c) DevBlinders
  * @license   Commercial license
  */
+
+
+ include(dirname(__FILE__) . '/config/config.inc.php');
+ include(dirname(__FILE__) . '/init.php');
+ 
 $sql = array();
 
 $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'dbblog_category` (
@@ -65,6 +71,8 @@ $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'dbblog_post` (
             `active` tinyint(1) unsigned NOT NULL DEFAULT \'0\',
             `date_add` datetime NOT NULL,
             `date_upd` datetime NOT NULL,
+            `publish_date` datetime DEFAULT NULL,       
+            `update_date` datetime DEFAULT NULL,    
             PRIMARY KEY (`id_dbblog_post`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8;';
 
@@ -99,4 +107,27 @@ foreach ($sql as $query) {
     if (Db::getInstance()->execute($query) == false) {
         return false;
     }
+}
+
+function install()
+{
+    $sql = array();
+
+    // Agrega aquí las sentencias SQL para las actualizaciones
+    $sql[] = 'ALTER TABLE `' . _DB_PREFIX_ . 'dbblog_post` ADD `publish_date` DATETIME AFTER `date_upd`';
+    $sql[] = 'ALTER TABLE `' . _DB_PREFIX_ . 'dbblog_post` ADD `update_date` DATETIME AFTER `publish_date`';
+
+    foreach ($sql as $query) {
+        if (!Db::getInstance()->execute($query)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+if (install()) {
+    echo 'Actualización exitosa';
+} else {
+    echo 'Error durante la actualización';
 }

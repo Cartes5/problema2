@@ -23,6 +23,9 @@ class DbBlogPost extends ObjectModel
     public $date_add;
     public $date_upd;
 
+    public $publish_date; // Agregar el Campo de Fecha de Publicación
+    public $update_date;  // Fecha de actualización programada
+
     public static $definition = array(
         'table' => 'dbblog_post',
         'primary' => 'id_dbblog_post',
@@ -38,6 +41,8 @@ class DbBlogPost extends ObjectModel
             'index' =>			        array('type' => self::TYPE_BOOL, 'validate' => 'isBool'),
             'date_add' =>		        array('type' => self::TYPE_DATE),
             'date_upd' =>		        array('type' => self::TYPE_DATE),
+            'publish_date' =>           array('type' => self::TYPE_DATE, 'validate' => 'isDate'),//Agrego los atributos
+            'update_date' =>            array('type' => self::TYPE_DATE, 'validate' => 'isDate'),//Agrego los atributos
             
             // Lang fields
             'short_desc' =>	        array('type' => self::TYPE_HTML, 'lang' => true, 'required' => false , 'validate' => 'isCleanHtml', 'size' => 4000),
@@ -53,42 +58,68 @@ class DbBlogPost extends ObjectModel
     public function __construct($id_dbblog_post = null, $id_lang = null, $id_shop = null)
     {
         parent::__construct($id_dbblog_post, $id_lang, $id_shop);
+        $this->publish_date = null;// Añadir clases del contructor
+        $this->update_date = null;// Añadir clases del contructor
     }
 
     public function add($autodate = true, $null_values = false)
-    {
-        $default_language_id = Configuration::get('PS_LANG_DEFAULT');
-        foreach ( $this->title as $k => $value ) {
-            if ( preg_match( '/^[1-9]\./', $value ) ) {
-                $this->title[ $k ] = '0' . $value;
-            }
-            if(empty($value)) {
-                $this->title[$k] = $this->title[$default_language_id];
-            }
+{
+    $default_language_id = Configuration::get('PS_LANG_DEFAULT');
+    foreach ($this->title as $k => $value) {
+        if (preg_match('/^[1-9]\./', $value)) {
+            $this->title[$k] = '0' . $value;
         }
-        foreach ( $this->link_rewrite as $k => $value ) {
-            if(empty($value)) {
-                $this->link_rewrite[$k] = Tools::link_rewrite($this->title[$k]);
-            }
+        if (empty($value)) {
+            $this->title[$k] = $this->title[$default_language_id];
         }
-        $ret = parent::add($autodate, $null_values);
-        return $ret;
+    }
+    foreach ($this->link_rewrite as $k => $value) {
+        if (empty($value)) {
+            $this->link_rewrite[$k] = Tools::link_rewrite($this->title[$k]);
+        }
+    }
+    if ($autodate) {
+        $this->date_add = date('Y-m-d H:i:s');
     }
 
-    public function update( $null_values = false ) {
-
-        foreach ( $this->title as $k => $value ) {
-            if ( preg_match( '/^[1-9]\./', $value ) ) {
-                $this->title[ $k ] = '0' . $value;
-            }
-        }
-        foreach ( $this->link_rewrite as $k => $value ) {
-            if(empty($value)) {
-                $this->link_rewrite[$k] = Tools::link_rewrite($this->title[$k]);
-            }
-        }
-        return parent::update( $null_values );
+    
+    // Nueva parte para manejar la fecha de publicación programada
+    if ($this->publish_date && strtotime($this->publish_date) > time()) {
+        $this->active = 0; // Desactivar automáticamente si la fecha de publicación es en el futuro
     }
+    // Agregar la fecha de publicación programada si está presente
+    if ($this->publish_date) {
+        $this->date_add = date('Y-m-d H:i:s', strtotime($this->publish_date));
+    }
+
+    $ret = parent::add($autodate, $null_values);
+    return $ret;
+}
+public function update($null_values = false)
+{
+    foreach ($this->title as $k => $value) {
+        if (preg_match('/^[1-9]\./', $value)) {
+            $this->title[$k] = '0' . $value;
+        }
+    }
+    foreach ($this->link_rewrite as $k => $value) {
+        if (empty($value)) {
+            $this->link_rewrite[$k] = Tools::link_rewrite($this->title[$k]);
+        }
+    }
+
+    // Nueva parte para manejar la fecha de publicación programada
+    if ($this->publish_date && strtotime($this->publish_date) > time()) {
+        $this->active = 0; // Desactivar automáticamente si la fecha de publicación es en el futuro
+    }
+    
+    // Actualizar la fecha de actualización si está presente
+    if ($this->update_date) {
+        $this->date_upd = date('Y-m-d H:i:s', strtotime($this->update_date));
+    }
+
+    return parent::update($null_values);
+}
 
     public static function getAuthors($limit = 0, $all = 1)
     {
@@ -256,59 +287,60 @@ class DbBlogPost extends ObjectModel
     }
 
     public static function getPost($id_lang, $rewrite)
-    {
-        $id_shop = (int)Context::getContext()->shop->id;
-        $sql = "SELECT p.*, pl.*, cl.title as title_category, cl.link_rewrite as link_category
-            FROM "._DB_PREFIX_."dbblog_post p
-            INNER JOIN  "._DB_PREFIX_."dbblog_post_lang pl 
-                ON p.id_dbblog_post = pl.id_dbblog_post 
-                    AND pl.id_lang = '$id_lang' AND pl.id_shop = '$id_shop'
-            INNER JOIN "._DB_PREFIX_."dbblog_category_lang cl 
-                ON p.id_dbblog_category = cl.id_dbblog_category
-                    AND cl.id_lang = '$id_lang' AND cl.id_shop = '$id_shop'
-            WHERE p.active = 1 AND pl.link_rewrite = '$rewrite'";
-        $result = Db::getInstance(_PS_USE_SQL_SLAVE_)->getRow($sql);
+{
+    $id_shop = (int)Context::getContext()->shop->id;
+    $current_date = date('Y-m-d H:i:s');
+    $sql = "SELECT p.*, pl.*, cl.title as title_category, cl.link_rewrite as link_category
+            FROM " . _DB_PREFIX_ . "dbblog_post p
+            INNER JOIN " . _DB_PREFIX_ . "dbblog_post_lang pl 
+                ON p.id_dbblog_post = pl.id_dbblog_post AND pl.id_lang = '$id_lang' AND pl.id_shop = '$id_shop'
+            INNER JOIN " . _DB_PREFIX_ . "dbblog_category_lang cl 
+                ON p.id_dbblog_category = cl.id_dbblog_category AND pl.id_lang = '$id_lang' AND cl.id_shop = '$id_shop'
+            WHERE pl.link_rewrite = '$rewrite' AND p.active = 1 
+                AND (p.publish_date IS NULL OR p.publish_date <= '$current_date')"; // Agregar condición de fecha de publicación
 
-        $post = array();
-        $post['author'] = DbBlogPost::getAuthorById($result['author']);
-        $post['id'] = $result['id_dbblog_post'];
-        $post['image'] = Dbblog::getNewImg($result['image']);
-        if(!empty($post['image'])) {
-            $post['img'] = _MODULE_DIR_ . 'dbblog/views/img/post/' . $result['image'];
-        } else {
-            $post['img'] = '';
-        }
-        $post['url'] = self::getLink($result['link_rewrite'], $id_lang);
-        $post['title'] = $result['title'];
-        $post['short_desc'] = $result['short_desc'];
-        $post['large_desc'] = $result['large_desc'];
-        $post['meta_title'] = $result['meta_title'];
-        $post['meta_description'] = $result['meta_description'];
-        $post['index'] = $result['index'];
-        $post['views'] = (int)$result['views'] + 1;
-        $post['date_add'] = date_format(date_create($result['date_add']), 'd/m/Y');
-        $post['date_upd'] = date_format(date_create($result['date_upd']), 'd/m/Y');
-        $post['date_add_json'] = $result['date_add'];
-        $post['date_upd_json'] = $result['date_upd'];
-        $post['title_category'] = $result['title_category'];
-        $post['url_category'] = DbBlogCategory::getLink($result['link_category'], $id_lang);
-        $post['link_rewrite_category'] = $result['link_category'];
-        $post['active'] = $result['active'];
+    $result = Db::getInstance(_PS_USE_SQL_SLAVE_)->getRow($sql);
 
-        $comments = DbBlogComment::getTotalCommentsByPost($result['id_dbblog_post']);
-        if($comments['total'] == 0){
-            $rating = 0;
-            $avg_rating = 0;
-        } else {
-            $rating = round($comments['suma'] * 100 / ($comments['total'] * 5), 1);
-            $avg_rating = round($comments['suma'] * 5 / ($comments['total'] * 5), 1);
-        }
-        $post['comments'] = $comments;
-        $post['rating'] = $rating;
-        $post['avg_rating'] = $avg_rating;
-
-        return $post;   
+    $post = array();
+    $post['author'] = DbBlogPost::getAuthorById($result['author']);
+    $post['id'] = $result['id_dbblog_post'];
+    $post['image'] = Dbblog::getNewImg($result['image']);
+    if (!empty($post['image'])) {
+        $post['img'] = _MODULE_DIR_ . 'dbblog/views/img/post/' . $result['image'];
+    } else {
+        $post['img'] = '';
     }
+    $post['url'] = self::getLink($result['link_rewrite'], $id_lang);
+    $post['title'] = $result['title'];
+    $post['short_desc'] = $result['short_desc'];
+    $post['large_desc'] = $result['large_desc'];
+    $post['meta_title'] = $result['meta_title'];
+    $post['meta_description'] = $result['meta_description'];
+    $post['index'] = $result['index'];
+    $post['views'] = (int)$result['views'] + 1;
+    $post['date_add'] = date_format(date_create($result['date_add']), 'd/m/Y');
+    $post['date_upd'] = date_format(date_create($result['date_upd']), 'd/m/Y');
+    $post['date_add_json'] = $result['date_add'];
+    $post['date_upd_json'] = $result['date_upd'];
+    $post['title_category'] = $result['title_category'];
+    $post['url_category'] = DbBlogCategory::getLink($result['link_category'], $id_lang);
+    $post['link_rewrite_category'] = $result['link_category'];
+    $post['active'] = $result['active'];
+
+    $comments = DbBlogComment::getTotalCommentsByPost($result['id_dbblog_post']);
+    if ($comments['total'] == 0) {
+        $rating = 0;
+        $avg_rating = 0;
+    } else {
+        $rating = round($comments['suma'] * 100 / ($comments['total'] * 5), 1);
+        $avg_rating = round($comments['suma'] * 5 / ($comments['total'] * 5), 1);
+    }
+    $post['comments'] = $comments;
+    $post['rating'] = $rating;
+    $post['avg_rating'] = $avg_rating;
+
+    return $post;
+}
 
 
     public static function getTotalPosts($id_lang, $page = 0)
@@ -331,27 +363,28 @@ class DbBlogPost extends ObjectModel
 
     public static function getPostHome($id_lang, $page = 0)
     {
-
         $id_shop = (int)Context::getContext()->shop->id;
         $limit = Configuration::get('DBBLOG_POSTS_PER_HOME');
         if ($limit == 0) {
             $limit = 10;
         }
         $offset = $page * $limit;
-
+    
+        // Modificar la consulta SQL para incluir la verificación de fecha de publicación
+        $current_date = date('Y-m-d H:i:s');
         $sql = "SELECT p.*, pl.*, cl.title as title_category, cl.link_rewrite as link_category
                 FROM " . _DB_PREFIX_ . "dbblog_post p
                 INNER JOIN " . _DB_PREFIX_ . "dbblog_post_lang pl 
                     ON p.id_dbblog_post = pl.id_dbblog_post AND pl.id_lang = '$id_lang' AND pl.id_shop = '$id_shop'
                 INNER JOIN " . _DB_PREFIX_ . "dbblog_category_lang cl 
                     ON p.id_dbblog_category = cl.id_dbblog_category AND pl.id_lang = '$id_lang' AND cl.id_shop = '$id_shop'
-                WHERE p.active = 1
+                WHERE p.active = 1 AND (p.publish_date IS NULL OR p.publish_date <= '$current_date')
                 GROUP BY p.id_dbblog_post
                 ORDER BY p.date_add DESC
                 LIMIT " . $offset . "," . $limit;
-
+    
         $result = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
-
+    
         $posts = array();
         foreach ($result as $row) {
             $comments = DbBlogComment::getTotalCommentsByPost($row['id_dbblog_post']);
@@ -360,7 +393,7 @@ class DbBlogPost extends ObjectModel
             } else {
                 $rating = round($comments['suma'] * 100 / ($comments['total'] * 5), 0);
             }
-
+    
             $posts[$row['id_dbblog_post']]['author'] = DbBlogPost::getAuthorById($row['author']);
             $posts[$row['id_dbblog_post']]['id'] = $row['id_dbblog_post'];
             $posts[$row['id_dbblog_post']]['image'] = Dbblog::getNewImg($row['image']);
@@ -375,7 +408,6 @@ class DbBlogPost extends ObjectModel
             $posts[$row['id_dbblog_post']]['rating'] = $rating;
         }
         return $posts;
-
     }
 
     public static function sumView($id_post)
